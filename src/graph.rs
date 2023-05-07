@@ -209,7 +209,19 @@ impl ImmutableGraph {
             return None;
         }
         // First remove all edges associated with the node.
-        todo!()
+        let out_edges = self.edges_directed(ni, Direction::Outgoing).into_iter();
+        let in_edges = self.edges_directed(ni, Direction::Incoming).into_iter();
+        out_edges.chain(in_edges).for_each(|ei| {
+            self.remove_edge(ei);
+        });
+        
+        let mut ret = None;
+        let old_node = &mut self.nodes[ni.0 as usize];
+        std::mem::swap(&mut ret, &mut old_node.weight);
+        old_node.edges = [INVALID, INVALID];
+        old_node.edges[OUTGOING] = self.unused_node;
+        self.unused_node = ni.0;
+        ret
     }
 
     /// Removes the edge.
@@ -218,7 +230,6 @@ impl ImmutableGraph {
             return None;
         }
 
-        let mut ret = None;
         let edge_idx = ei.0;
         let Some(edge_rep) = self.edges.get_mut(edge_idx as usize) else {
             return None;
@@ -251,7 +262,7 @@ impl ImmutableGraph {
             }
         }
 
-        ret
+        old_edge.weight
     }
 }
 
