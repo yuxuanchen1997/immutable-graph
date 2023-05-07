@@ -35,7 +35,7 @@ impl Node {
     pub fn new(weight: i32) -> Self {
         Self {
             weight: Some(weight),
-            edges: [INVALID, INVALID]
+            edges: [INVALID, INVALID],
         }
     }
 
@@ -45,7 +45,8 @@ impl Node {
 }
 
 /// Because edges are accessible from both ends, each edge is considered an element of two linked
-/// lists. One originated from each direction. 
+/// lists. One originated from each direction. Edges themselves contain data used for two doubly
+/// linked lists representing their membership of [from, to] node's [out, in] adjacency lists.
 #[derive(Clone)]
 pub struct Edge {
     weight: Option<i32>,
@@ -54,15 +55,19 @@ pub struct Edge {
     /// next[OUTGOING] is next in the chain when the edge is a part of a successor list.
     /// next[INCOMING] is next in the chain when the edge is a part of a predecessor list.
     next: [IdType; 2],
+    /// prev[OUTGOING] is previous in the chain when the edge is a part of a successor list.
+    /// prev[INCOMING] is previous in the chain when the edge is a part of a predecessor list.
+    prev: [IdType; 2],
 }
 
 impl Edge {
     pub fn new(weight: i32, from: NodeId, to: NodeId) -> Self {
         Self {
-            weight: Some(weight), 
+            weight: Some(weight),
             from,
             to,
-            next: [INVALID, INVALID]
+            next: [INVALID, INVALID],
+            prev: [INVALID, INVALID],
         }
     }
 
@@ -75,7 +80,7 @@ impl Edge {
 /// underlying data structure that backs the storage of the nodes and edges, which makes it trivial
 /// to copy. This is useful in many cases: e.g. A graph building process that requires bookkeeping
 /// intermediate steps, or algorithms that requires back tracking. `NodeId`s and `EdgeId`s of this
-/// graph is stable for each `ImmutableGraph` object and cloned copies. (i.e. The indices into the 
+/// graph is stable for each `ImmutableGraph` object and cloned copies. (i.e. The indices into the
 /// rest of the graph do not change when nodes and edges are removed from the graph.)
 #[derive(Clone, Default)]
 pub struct ImmutableGraph {
@@ -92,17 +97,20 @@ impl ImmutableGraph {
             /// unused_node and unused_edges themselves uses the Id pointer fields to construct a
             /// singly linked list to recycle items that are removed from previous operations.
             /// Removing nodes or edges work alike, by prepending themselves to the beginning of
-            /// the list. 
+            /// the list.
             unused_node: INVALID,
             unused_edge: INVALID,
-            ..Default::default() 
+            ..Default::default()
         }
     }
 
     pub fn node(&self, ni: NodeId) -> Option<&Node> {
         let maybe_ret_node = self.nodes.get(ni.0 as usize);
         match maybe_ret_node {
-            Some(Node {weight: Some(_), edges: _}) => maybe_ret_node,
+            Some(Node {
+                weight: Some(_),
+                edges: _,
+            }) => maybe_ret_node,
             _ => None,
         }
     }
@@ -110,11 +118,17 @@ impl ImmutableGraph {
     pub fn edge(&self, ei: EdgeId) -> Option<&Edge> {
         let maybe_ret_edge = self.edges.get(ei.0 as usize);
         match maybe_ret_edge {
-            Some(Edge {weight: Some(_), from: _, to: _, next: _}) => maybe_ret_edge,
+            Some(Edge {
+                weight: Some(_),
+                from: _,
+                to: _,
+                next: _,
+                prev: _,
+            }) => maybe_ret_edge,
             _ => None,
         }
     }
-    
+
     pub fn node_weight(&self, ni: NodeId) -> Option<i32> {
         self.node(ni).map(|n| n.weight())
     }
@@ -127,9 +141,9 @@ impl ImmutableGraph {
         self.edge(ei).map(|e| (e.from, e.to))
     }
 
-    /// Creating a new node in the graph. 
+    /// Creating a new node in the graph.
     pub fn add_node(&mut self, weight: i32) -> NodeId {
-        // TODO: use unused_nodes. 
+        // TODO: use unused_nodes.
         let ret: IdType = self.nodes.len().try_into().expect("NodeId overflow");
         self.nodes.push_back(Node::new(weight));
         NodeId(ret)
@@ -141,10 +155,25 @@ impl ImmutableGraph {
         let mut new_edge = Edge::new(weight, from, to);
         let from_idx = from.0 as usize;
         let to_idx = to.0 as usize;
-        new_edge.next[OUTGOING] = self.nodes[from_idx].edges[OUTGOING];
-        self.nodes[from_idx].edges[OUTGOING] = ret;
-        new_edge.next[INCOMING] = self.nodes[to_idx].edges[INCOMING];
-        self.nodes[to_idx].edges[INCOMING] = ret;
+
+        // Prepend new edge into the edge lists
+        let from_node_out_edge_list = &mut self.nodes[from_idx].edges[OUTGOING];
+        new_edge.next[OUTGOING] = *from_node_out_edge_list;
+        *from_node_out_edge_list = ret;
+
+        let to_node_in_edge_list = &mut self.nodes[to_idx].edges[INCOMING];
+        new_edge.next[INCOMING] = *to_node_in_edge_list;
+        *to_node_in_edge_list = ret;
+
+        // New edge default prev is INVALID, which is ok. Patch the next nodes in both doubly
+        // linked lists and make new_edge->next->prev == new_edge
+        for dir in [OUTGOING, INCOMING] {
+            let next_idx = new_edge.next[dir] as usize;
+            if let Some(next_edge) = self.edges.get_mut(next_idx) {
+                next_edge.prev[dir] = ret;
+            }
+        }
+
         self.edges.push_back(new_edge);
         EdgeId(ret)
     }
@@ -160,12 +189,69 @@ impl ImmutableGraph {
         ret
     }
 
+    fn node_exists(&self, ni: NodeId) -> bool {
+        let Some(node) = self.nodes.get(ni.0 as usize) else {
+            return false;
+        };
+        node.weight.is_some()
+    }
+
+    fn edge_exists(&self, ei: EdgeId) -> bool {
+        let Some(edge) = self.edges.get(ei.0 as usize) else {
+            return false;
+        };
+        edge.weight.is_some()
+    }
+
+    /// Removes the node along with all edges that associated with it.
     pub fn remove_node(&mut self, ni: NodeId) -> Option<i32> {
+        if !self.node_exists(ni) {
+            return None;
+        }
+        // First remove all edges associated with the node.
         todo!()
     }
 
+    /// Removes the edge.
     pub fn remove_edge(&mut self, ei: EdgeId) -> Option<i32> {
-        todo!()
+        if !self.edge_exists(ei) {
+            return None;
+        }
+
+        let mut ret = None;
+        let edge_idx = ei.0;
+        let Some(edge_rep) = self.edges.get_mut(edge_idx as usize) else {
+            return None;
+        };
+
+        let mut replacement_edge = Edge {
+            weight: None,
+            from: NodeId(INVALID),
+            to: NodeId(INVALID),
+            next: [INVALID, INVALID],
+            prev: [INVALID, INVALID],
+        };
+
+        replacement_edge.next[OUTGOING] = self.unused_edge;
+        self.unused_edge = edge_idx;
+        std::mem::swap(edge_rep, &mut replacement_edge);
+        let old_edge = replacement_edge;
+
+        // Disconnect the edge from the linked lists
+        for dir in [OUTGOING, INCOMING] {
+            let next_edge_idx = old_edge.next[dir];
+            let prev_edge_idx = old_edge.prev[dir];
+
+            if let Some(next_edge) = self.edges.get_mut(next_edge_idx as usize) {
+                next_edge.prev[dir] = prev_edge_idx;
+            }
+
+            if let Some(prev_edge) = self.edges.get_mut(prev_edge_idx as usize) {
+                prev_edge.next[dir] = next_edge_idx;
+            }
+        }
+
+        ret
     }
 }
 
@@ -180,9 +266,21 @@ pub mod tests {
         let node6 = graph.add_node(6);
         let edge1 = graph.add_edge(node5, node6, 1);
         let edge2 = graph.add_edge(node5, node6, 2);
-        assert_eq!(vec![edge2, edge1], graph.edges_directed(node5, Direction::Outgoing));
-        assert_eq!(Vec::<EdgeId>::from_iter([]), graph.edges_directed(node5, Direction::Incoming));
-        assert_eq!(vec![edge2, edge1], graph.edges_directed(node6, Direction::Incoming));
-        assert_eq!(Vec::<EdgeId>::from_iter([]), graph.edges_directed(node6, Direction::Outgoing));
+        assert_eq!(
+            vec![edge2, edge1],
+            graph.edges_directed(node5, Direction::Outgoing)
+        );
+        assert_eq!(
+            Vec::<EdgeId>::from_iter([]),
+            graph.edges_directed(node5, Direction::Incoming)
+        );
+        assert_eq!(
+            vec![edge2, edge1],
+            graph.edges_directed(node6, Direction::Incoming)
+        );
+        assert_eq!(
+            Vec::<EdgeId>::from_iter([]),
+            graph.edges_directed(node6, Direction::Outgoing)
+        );
     }
 }
