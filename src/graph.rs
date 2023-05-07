@@ -214,7 +214,7 @@ impl ImmutableGraph {
         out_edges.chain(in_edges).for_each(|ei| {
             self.remove_edge(ei);
         });
-        
+
         let mut ret = None;
         let old_node = &mut self.nodes[ni.0 as usize];
         std::mem::swap(&mut ret, &mut old_node.weight);
