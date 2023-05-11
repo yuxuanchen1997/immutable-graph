@@ -159,16 +159,16 @@ impl<NW: Clone, EW: Clone> ImmutableGraph<NW, EW> {
 
     /// Creating a new node in the graph.
     pub fn add_node(&mut self, weight: NW) -> NodeId {
+        let mut new_node = Node::new(weight);
         if self.unused_node != INVALID {
             let ret = self.unused_node;
             let node_mut = self.nodes.get_mut(ret as usize).unwrap();
             self.unused_node = node_mut.edges[OUTGOING];
-            node_mut.weight = Some(weight);
-            node_mut.edges = [INVALID, INVALID];
+            std::mem::swap(&mut new_node, node_mut);
             NodeId(ret)
         } else {
             let ret: IdType = self.nodes.len().try_into().expect("NodeId overflow");
-            self.nodes.push_back(Node::new(weight));
+            self.nodes.push_back(new_node);
             NodeId(ret)
         }
     }
@@ -331,8 +331,9 @@ pub mod tests {
         );
 
         graph.remove_node(node5);
-        let new_node5 = graph.add_node(5);
-        assert_eq!(node5, new_node5);
+        let new_node15 = graph.add_node(15);
+        assert_eq!(node5, new_node15);
+        assert_eq!(graph.node_weight(new_node15).unwrap(), &15);
 
         let node7 = graph.add_node(7);
         assert_eq!(node7, NodeId(2));
