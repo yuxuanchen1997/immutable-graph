@@ -1,4 +1,19 @@
-// Copyright (c) 2023 Yuxuan Chen
+// Copyright 2023 Yuxuan Chen
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+// and associated documentation files (the “Software”), to deal in the Software without
+// restriction, including without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or
+// substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+// BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use im::Vector;
 
@@ -13,7 +28,7 @@ pub enum Direction {
 const OUTGOING: usize = Direction::Outgoing as usize;
 const INCOMING: usize = Direction::Incoming as usize;
 
-pub type IdType = u8;
+pub type IdType = u32;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct NodeId(IdType);
@@ -143,19 +158,34 @@ impl ImmutableGraph {
 
     /// Creating a new node in the graph.
     pub fn add_node(&mut self, weight: i32) -> NodeId {
-        // TODO: use unused_nodes.
-        let ret: IdType = self.nodes.len().try_into().expect("NodeId overflow");
-        self.nodes.push_back(Node::new(weight));
-        NodeId(ret)
+        if self.unused_node != INVALID {
+            let ret = self.unused_node;
+            let node_mut = self.nodes.get_mut(ret as usize).unwrap();
+            self.unused_node = node_mut.edges[OUTGOING];
+            node_mut.weight = Some(weight);
+            node_mut.edges = [INVALID, INVALID];
+            NodeId(ret)
+        } else {
+            let ret: IdType = self.nodes.len().try_into().expect("NodeId overflow");
+            self.nodes.push_back(Node::new(weight));
+            NodeId(ret)
+        }
     }
 
     pub fn add_edge(&mut self, from: NodeId, to: NodeId, weight: i32) -> EdgeId {
-        // TODO: use unused_edges.
-        let ret: IdType = self.edges.len().try_into().expect("EdgeId overflow");
         let mut new_edge = Edge::new(weight, from, to);
         let from_idx = from.0 as usize;
         let to_idx = to.0 as usize;
 
+        let ret = if self.unused_edge != INVALID {
+            let edge_id = self.unused_edge;
+            let edges_mut = self.edges.get_mut(edge_id as usize).unwrap();
+            self.unused_edge = edges_mut.next[OUTGOING];
+            edge_id
+        } else {
+            let edge_id: IdType = self.edges.len().try_into().expect("EdgeId overflow");
+            edge_id
+        };
         // Prepend new edge into the edge lists
         let from_node_out_edge_list = &mut self.nodes[from_idx].edges[OUTGOING];
         new_edge.next[OUTGOING] = *from_node_out_edge_list;
@@ -174,7 +204,12 @@ impl ImmutableGraph {
             }
         }
 
-        self.edges.push_back(new_edge);
+        if ret as usize == self.edges.len() {
+            self.edges.push_back(new_edge);
+        } else {
+            assert!((ret as usize) < self.edges.len());
+            std::mem::swap(&mut new_edge, self.edges.get_mut(ret as usize).unwrap());
+        }
         EdgeId(ret)
     }
 
