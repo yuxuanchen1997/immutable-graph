@@ -335,13 +335,44 @@ pub mod tests {
             Vec::<EdgeId>::from_iter([]),
             graph.edges_directed(node6, Direction::Outgoing)
         );
+    }
 
+    #[test]
+    fn test_deletion() {
+        let mut graph = ImmutableGraph::new();
+        let node5 = graph.add_node(5);
+        let node6 = graph.add_node(6);
+        graph.add_edge(node5, node6, 1);
+        graph.add_edge(node5, node6, 2);
         graph.remove_node(node5);
         let new_node15 = graph.add_node(15);
         assert_eq!(node5, new_node15);
         assert_eq!(graph.node_weight(new_node15).unwrap(), &15);
-
         let node7 = graph.add_node(7);
         assert_eq!(node7, NodeId(2));
+
+    }
+
+    #[test]
+    fn test_insertion_nodes_remove_and_reuse() {
+        let mut graph = ImmutableGraph::<i32, i32>::new();
+        let mut ids = Vec::new();
+        for i in 0..1000 {
+            ids.push(graph.add_node(i));
+        }
+
+        for (_index, id) in ids.iter().enumerate().filter(|(index, _id)| index % 2 == 1) {
+            graph.remove_node(*id);
+        }
+
+        for i in 0..500 {
+            let id = graph.add_node(i);
+            assert!(id.0 < 1000 && id.0 % 2 == 1);
+        }
+
+        for i in 0..500 {
+            let id = graph.add_node(i);
+            assert!(id.0 >= 1000);
+        }
     }
 }
