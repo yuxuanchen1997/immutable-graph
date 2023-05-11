@@ -41,21 +41,21 @@ const INVALID: IdType = IdType::MAX;
 /// Representation of a Node or a vacant spot if it's found as a part of unused_nodes. When a node
 /// is present, the edges array stores pointers to heads of two linked lists.
 #[derive(Clone)]
-pub struct Node {
-    weight: Option<i32>,
+struct Node<NW: Clone> {
+    weight: Option<NW>,
     edges: [IdType; 2],
 }
 
-impl Node {
-    pub fn new(weight: i32) -> Self {
+impl<NW: Clone> Node<NW> {
+    fn new(weight: NW) -> Self {
         Self {
             weight: Some(weight),
             edges: [INVALID, INVALID],
         }
     }
 
-    pub fn weight(&self) -> i32 {
-        self.weight.unwrap()
+    fn weight(&self) -> &NW {
+        self.weight.as_ref().unwrap()
     }
 }
 
@@ -63,8 +63,8 @@ impl Node {
 /// lists. One originated from each direction. Edges themselves contain data used for two doubly
 /// linked lists representing their membership of [from, to] node's [out, in] adjacency lists.
 #[derive(Clone)]
-pub struct Edge {
-    weight: Option<i32>,
+struct Edge<EW: Clone> {
+    weight: Option<EW>,
     from: NodeId,
     to: NodeId,
     /// next[OUTGOING] is next in the chain when the edge is a part of a successor list.
@@ -75,8 +75,8 @@ pub struct Edge {
     prev: [IdType; 2],
 }
 
-impl Edge {
-    pub fn new(weight: i32, from: NodeId, to: NodeId) -> Self {
+impl<EW: Clone> Edge<EW> {
+    fn new(weight: EW, from: NodeId, to: NodeId) -> Self {
         Self {
             weight: Some(weight),
             from,
@@ -86,8 +86,8 @@ impl Edge {
         }
     }
 
-    pub fn weight(&self) -> i32 {
-        self.weight.unwrap()
+    fn weight(&self) -> &EW {
+        self.weight.as_ref().unwrap()
     }
 }
 
@@ -97,29 +97,30 @@ impl Edge {
 /// intermediate steps, or algorithms that requires back tracking. `NodeId`s and `EdgeId`s of this
 /// graph is stable for each `ImmutableGraph` object and cloned copies. (i.e. The indices into the
 /// rest of the graph do not change when nodes and edges are removed from the graph.)
-#[derive(Clone, Default)]
-pub struct ImmutableGraph {
+#[derive(Clone)]
+pub struct ImmutableGraph<NW: Clone, EW: Clone> {
     /// By using im::Vector, the internal structure of this immutable graph is O(1) copy.
-    nodes: Vector<Node>,
-    edges: Vector<Edge>,
+    nodes: Vector<Node<NW>>,
+    edges: Vector<Edge<EW>>,
     unused_node: IdType,
     unused_edge: IdType,
 }
 
-impl ImmutableGraph {
+impl<NW: Clone, EW: Clone> ImmutableGraph<NW, EW> {
     pub fn new() -> Self {
         Self {
+            nodes: Vector::new(),
+            edges: Vector::new(),
             /// unused_node and unused_edges themselves uses the Id pointer fields to construct a
             /// singly linked list to recycle items that are removed from previous operations.
             /// Removing nodes or edges work alike, by prepending themselves to the beginning of
             /// the list.
             unused_node: INVALID,
             unused_edge: INVALID,
-            ..Default::default()
         }
     }
 
-    pub fn node(&self, ni: NodeId) -> Option<&Node> {
+    fn node(&self, ni: NodeId) -> Option<&Node<NW>> {
         let maybe_ret_node = self.nodes.get(ni.0 as usize);
         match maybe_ret_node {
             Some(Node {
@@ -130,7 +131,7 @@ impl ImmutableGraph {
         }
     }
 
-    pub fn edge(&self, ei: EdgeId) -> Option<&Edge> {
+    fn edge(&self, ei: EdgeId) -> Option<&Edge<EW>> {
         let maybe_ret_edge = self.edges.get(ei.0 as usize);
         match maybe_ret_edge {
             Some(Edge {
@@ -144,11 +145,11 @@ impl ImmutableGraph {
         }
     }
 
-    pub fn node_weight(&self, ni: NodeId) -> Option<i32> {
+    pub fn node_weight(&self, ni: NodeId) -> Option<&NW> {
         self.node(ni).map(|n| n.weight())
     }
 
-    pub fn edge_weight(&self, ei: EdgeId) -> Option<i32> {
+    pub fn edge_weight(&self, ei: EdgeId) -> Option<&EW> {
         self.edge(ei).map(|e| e.weight())
     }
 
@@ -157,7 +158,7 @@ impl ImmutableGraph {
     }
 
     /// Creating a new node in the graph.
-    pub fn add_node(&mut self, weight: i32) -> NodeId {
+    pub fn add_node(&mut self, weight: NW) -> NodeId {
         if self.unused_node != INVALID {
             let ret = self.unused_node;
             let node_mut = self.nodes.get_mut(ret as usize).unwrap();
@@ -172,7 +173,7 @@ impl ImmutableGraph {
         }
     }
 
-    pub fn add_edge(&mut self, from: NodeId, to: NodeId, weight: i32) -> EdgeId {
+    pub fn add_edge(&mut self, from: NodeId, to: NodeId, weight: EW) -> EdgeId {
         let mut new_edge = Edge::new(weight, from, to);
         let from_idx = from.0 as usize;
         let to_idx = to.0 as usize;
@@ -239,7 +240,7 @@ impl ImmutableGraph {
     }
 
     /// Removes the node along with all edges that associated with it.
-    pub fn remove_node(&mut self, ni: NodeId) -> Option<i32> {
+    pub fn remove_node(&mut self, ni: NodeId) -> Option<NW> {
         if !self.node_exists(ni) {
             return None;
         }
@@ -260,7 +261,7 @@ impl ImmutableGraph {
     }
 
     /// Removes the edge.
-    pub fn remove_edge(&mut self, ei: EdgeId) -> Option<i32> {
+    pub fn remove_edge(&mut self, ei: EdgeId) -> Option<EW> {
         if !self.edge_exists(ei) {
             return None;
         }
@@ -328,5 +329,12 @@ pub mod tests {
             Vec::<EdgeId>::from_iter([]),
             graph.edges_directed(node6, Direction::Outgoing)
         );
+
+        graph.remove_node(node5);
+        let new_node5 = graph.add_node(5);
+        assert_eq!(node5, new_node5);
+
+        let node7 = graph.add_node(7);
+        assert_eq!(node7, NodeId(2));
     }
 }
