@@ -28,7 +28,7 @@ pub enum Direction {
 const OUTGOING: usize = Direction::Outgoing as usize;
 const INCOMING: usize = Direction::Incoming as usize;
 
-pub type IdType = u32;
+type IdType = u32;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct NodeId(IdType);
@@ -104,6 +104,12 @@ pub struct ImmutableGraph<NW: Clone, EW: Clone> {
     edges: Vector<Edge<EW>>,
     unused_node: IdType,
     unused_edge: IdType,
+}
+
+impl<NW: Clone, EW: Clone> Default for ImmutableGraph<NW, EW> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<NW: Clone, EW: Clone> ImmutableGraph<NW, EW> {
